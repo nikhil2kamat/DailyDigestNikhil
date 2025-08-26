@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Daily Alerts — Timeline View (V6)</title>
+<base target="_blank">
+<style>
+  :root{--bg:#f7fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--brand:#2563eb;--warn:#ef4444;--ok:#16a34a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .container{max-width:1100px;margin:0 auto;padding:20px}
+  header{position:sticky;top:0;background:linear-gradient(#f7fafc,#f7fafc 85%,transparent);padding-bottom:8px;z-index:5}
+  h1{margin:0 0 6px;font-size:26px}
+  .muted{color:var(--muted)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;cursor:pointer}
+  .btn.brand{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.danger{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .controls{gap:10px}
+  input,select{padding:9px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .help{font-size:12px;color:var(--muted)}
+  .badges{display:flex;gap:6px;flex-wrap:wrap}
+  .badge{border:1px solid var(--line);border-radius:999px;padding:2px 8px;font-size:12px;color:var(--muted)}
+  .badge.warn{border-color:#fecaca;background:#fff1f2;color:#991b1b}
+  .badge.ok{border-color:#bbf7d0;background:#f0fdf4;color:#166534}
+  details.day{border:1px solid var(--line);border-radius:14px;background:#fff;margin:10px 0}
+  details>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--line)}
+  details>summary::-webkit-details-marker{display:none}
+  .pill{background:#eef2ff;color:#334155;border-radius:999px;padding:2px 8px;font-size:12px}
+  .alert{border-bottom:1px dashed var(--line);padding:12px 16px}
+  .alert:last-child{border-bottom:none}
+  .alert-head{display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .alert-title{font-weight:700}
+  .alert-meta{display:flex;gap:8px;align-items:center}
+  .alert-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .item-card{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;background:#fff}
+  .item-title{font-weight:600}
+  dialog{border:none;border-radius:16px;padding:0}
+  dialog .card{border:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Daily Alerts — Timeline (V6)</h1>
+    <div class="row controls">
+      <input id="q" placeholder="Search title, source, tags, notes, section items…" style="min-width:240px">
+      <select id="cat">
+        <option value="all">All categories</option>
+        <option value="8am">8:00 • Watchlist News</option>
+        <option value="12pm">12:00 • AI Digest</option>
+        <option value="3pm">3:00 • Valuation Training</option>
+        <option value="5pm">5:00 • Indian Example</option>
+        <option value="other">Other</option>
+      </select>
+      <label class="row" style="gap:6px"><input type="checkbox" id="onlyOpen"> Only open</label>
+      <input id="jumpDate" type="date"> <button class="btn" id="btnJump">Jump</button>
+      <button class="btn" id="btnToday">Today</button>
+      <button class="btn" id="btnExpand">Expand all</button>
+      <button class="btn" id="btnCollapse">Collapse all</button>
+    </div>
+    <div class="row controls" style="margin-top:8px">
+      <input id="syncUrl" type="url" style="min-width:420px" placeholder="https://gist.githubusercontent.com/.../raw/alerts.json">
+      <label class="row" style="gap:6px"><input type="checkbox" id="autoSync"> Auto-sync</label>
+      <select id="syncInterval">
+        <option value="5">5 min</option>
+        <option value="10">10 min</option>
+        <option value="15" selected>15 min</option>
+        <option value="30">30 min</option>
+        <option value="60">60 min</option>
+      </select>
+      <button class="btn" id="btnSync">Sync now</button>
+      <button class="btn" id="btnExport">Export CSV</button>
+      <button class="btn" id="btnImport">Import JSON</button>
+      <button class="btn danger" id="btnReset">Reset</button>
+    </div>
+    <div class="help" id="syncMsg">Last sync: never</div>
+  </header>
+
+  <section id="timeline"></section>
+</div>
+
+<!-- Import dialog -->
+<dialog id="dlgImport"><form method="dialog" class="card" style="min-width:min(700px,95vw)">
+  <h3 style="margin:0 0 8px">Import alerts (JSON)</h3>
+  <p class="help">Paste an array or an object like <code>{"alerts":[...]}</code>.</p>
+  <textarea id="importText" rows="12" placeholder='{"alerts":[{"title":"Example","time":"2025-08-26T08:00:00+05:30","category":"8am","status":"new","priority":"high","source":"Watchlist","link":"https://…","tags":["earnings"],"notes":"Notes","sections":[{"heading":"Section","items":[{"title":"Item","summary":"…","link":"https://…"}]}]}]}'></textarea>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" value="cancel">Cancel</button><button class="btn brand" id="btnDoImport" value="default">Import</button></div>
+</form></dialog>
+
+<!-- Details dialog -->
+<dialog id="dlgDetails"><div class="card" style="min-width:min(780px,95vw)">
+  <h3 id="d_title" style="margin:0 0 8px"></h3>
+  <div class="help" style="margin:-4px 0 8px" id="d_meta"></div>
+  <div id="d_notes" style="margin-bottom:8px"></div>
+  <div id="d_sections"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" onclick="this.closest('dialog').close()">Close</button></div>
+</div></dialog>
+
+<script>
+(function(){
+  const DEFAULT_SYNC_URL='https://gist.githubusercontent.com/nikhil2kamat/fa0d49eff48903c320f0ee911de3ba4d/raw/7e345c5c13a75ed0e4b0a8fdeaa4d454fcee83b4/alerts.json';
+  const STORAGE_KEY='alerts_timeline_v6';
+  const SYNC_URL_KEY='alerts_sync_url_v6';
+  const AUTO_KEY='alerts_auto_v6';
+  const INT_KEY='alerts_int_v6';
+  const LAST_KEY='alerts_last_v6';
+
+  const els = Object.fromEntries(['q','cat','onlyOpen','jumpDate','btnJump','btnToday','btnExpand','btnCollapse','syncUrl','autoSync','syncInterval','btnSync','btnExport','btnImport','btnReset','timeline','syncMsg','dlgImport','importText','btnDoImport','dlgDetails','d_title','d_meta','d_notes','d_sections'].map(id=>[id,document.getElementById(id)]));
+
+  let state = load();
+
+  // Init controls
+  els.syncUrl.value = localStorage.getItem(SYNC_URL_KEY) || DEFAULT_SYNC_URL;
+  els.autoSync.checked = localStorage.getItem(AUTO_KEY)===null ? true : localStorage.getItem(AUTO_KEY)==='true';
+  els.syncInterval.value = localStorage.getItem(INT_KEY) || '15';
+  updateLast();
+
+  // Events
+  els.q.addEventListener('input', render);
+  els.cat.addEventListener('change', render);
+  els.onlyOpen.addEventListener('change', render);
+  els.btnJump.addEventListener('click', ()=>{ if(!els.jumpDate.value) return; const id='day-'+els.jumpDate.value; const el=document.getElementById(id); if(el){ el.open=true; el.scrollIntoView({behavior:'smooth',block:'start'});} });
+  els.btnToday.addEventListener('click', ()=>{ const today=keyFromDate(new Date()); const el=document.getElementById('day-'+today); if(el){ el.open=true; el.scrollIntoView({behavior:'smooth',block:'start'});} });
+  els.btnExpand.addEventListener('click', ()=>{ document.querySelectorAll('details.day').forEach(d=>d.open=true); });
+  els.btnCollapse.addEventListener('click', ()=>{ document.querySelectorAll('details.day').forEach(d=>d.open=false); });
+
+  els.btnExport.addEventListener('click', exportCSV);
+  els.btnImport.addEventListener('click', ()=>{ els.importText.value=''; els.dlgImport.showModal(); });
+  els.btnDoImport.addEventListener('click', (e)=>{ e.preventDefault(); try{ const data=JSON.parse(els.importText.value); const list=Array.isArray(data)?data:data.alerts; if(!Array.isArray(list)) throw new Error('Invalid format'); state.alerts=merge(normalize(list), state.alerts); save(); render(); els.dlgImport.close(); }catch(err){ alert('Import failed: '+(err?.message||err)); } });
+  els.btnReset.addEventListener('click', ()=>{ if(confirm('This will clear local alerts and settings. Continue?')){ localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(SYNC_URL_KEY); localStorage.removeItem(AUTO_KEY); localStorage.removeItem(INT_KEY); localStorage.removeItem(LAST_KEY); state={alerts:starter()}; els.syncUrl.value=DEFAULT_SYNC_URL; els.autoSync.checked=true; els.syncInterval.value='15'; updateLast(); render(); }});
+
+  els.btnSync.addEventListener('click', fetchSync);
+  els.autoSync.addEventListener('change', ()=>{ localStorage.setItem(AUTO_KEY, els.autoSync.checked); resetTimer(); });
+  els.syncUrl.addEventListener('change', ()=>{ localStorage.setItem(SYNC_URL_KEY, els.syncUrl.value.trim()); resetTimer(); });
+  els.syncInterval.addEventListener('change', ()=>{ localStorage.setItem(INT_KEY, els.syncInterval.value); resetTimer(); });
+
+  // Render timeline
+  function render(){ save(); const filtered = filterAlerts(state.alerts); const groups = groupByDay(filtered); paint(groups); }
+
+  function filterAlerts(list){ const query=(els.q.value||'').toLowerCase(); const cat=els.cat.value; const openOnly=els.onlyOpen.checked; return list
+    .filter(a=> cat==='all'?true:a.category===cat)
+    .filter(a=> openOnly ? a.status!=='done' : true)
+    .filter(a=> !query ? true : matchesQuery(a, query))
+    .sort((a,b)=> new Date(b.time)-new Date(a.time)); }
+
+  function matchesQuery(a, q){ const hay=[a.title,a.source,a.notes,(a.tags||[]).join(' ')];
+    (a.sections||[]).forEach(s=>{ hay.push(s.heading||''); (s.items||[]).forEach(it=>{ hay.push(it.title||'', it.summary||'', it.source||''); }); });
+    return hay.join(' ').toLowerCase().includes(q);
+  }
+
+  function groupByDay(list){ const map=new Map(); for(const a of list){ const k=keyFromDate(new Date(a.time)); if(!map.has(k)) map.set(k, []); map.get(k).push(a); } return Array.from(map.entries()).sort((x,y)=> y[0].localeCompare(x[0])); }
+  function keyFromDate(d){ const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2); return `${y}-${m}-${da}`; }
+
+  function paint(groups){ els.timeline.innerHTML=''; if(!groups.length){ els.timeline.innerHTML='<div class="muted">No alerts found.</div>'; return; }
+    for(const [day, items] of groups){ const details=document.createElement('details'); details.className='day'; details.id='day-'+day; details.open = (day===keyFromDate(new Date()));
+      const sum=document.createElement('summary'); const count=items.length;
+      const byCat = countBy(items, x=>x.category);
+      sum.innerHTML = `<span style="font-weight:700">${fmtDay(day)}</span> <span class="pill">${count} alerts</span>`+
+        ` <span class="pill">8am ${byCat['8am']||0}</span>`+
+        ` <span class="pill">12pm ${byCat['12pm']||0}</span>`+
+        ` <span class="pill">3pm ${byCat['3pm']||0}</span>`+
+        ` <span class="pill">5pm ${byCat['5pm']||0}</span>`;
+      details.appendChild(sum);
+      // alerts list
+      const wrap=document.createElement('div');
+      for(const a of items.sort((a,b)=> new Date(a.time)-new Date(b.time))){ // chronological within the day
+        const row=document.createElement('div'); row.className='alert';
+        const head=document.createElement('div'); head.className='alert-head';
+        const left=document.createElement('div');
+        const t=document.createElement('div'); t.className='alert-title'; t.textContent=a.title; left.appendChild(t);
+        const meta=document.createElement('div'); meta.className='help'; meta.textContent = `${new Date(a.time).toLocaleTimeString()} • ${label(a.category)} • ${a.source||'—'}`; left.appendChild(meta);
+        const notes=a.notes?document.createElement('div'):null; if(notes){ notes.className='help'; notes.textContent=a.notes; left.appendChild(notes); }
+        head.appendChild(left);
+        const right=document.createElement('div'); right.className='alert-meta';
+        const tags=document.createElement('div'); tags.className='badges'; (a.tags||[]).forEach(tag=>{ const b=document.createElement('span'); b.className='badge'; b.textContent=tag; tags.appendChild(b); }); right.appendChild(tags);
+        const actions=document.createElement('div'); actions.className='alert-actions';
+        const btnView=button('View', ()=>openDetails(a)); actions.appendChild(btnView);
+        const btnDone=button(a.status==='done'?'Undone':'Done', ()=>{toggleDone(a.id); render();}); actions.appendChild(btnDone);
+        head.appendChild(actions);
+        row.appendChild(head);
+        // Optional quick link
+        const quick = normalizeAbsolute(a.link); if(quick){ const ql=document.createElement('div'); ql.className='help'; ql.innerHTML=`Quick link: <a href="${quick}" rel="noopener noreferrer">${quick}</a>`; row.appendChild(ql);} 
+        wrap.appendChild(row);
+      }
+      details.appendChild(wrap); els.timeline.appendChild(details);
+    }
+  }
+
+  function countBy(arr, fn){ const m={}; for(const x of arr){ const k=fn(x); m[k]=(m[k]||0)+1; } return m; }
+  function label(cat){ return ({'8am':'8:00 • Watchlist News','12pm':'12:00 • AI Digest','3pm':'3:00 • Valuation Training','5pm':'5:00 • Indian Example','other':'Other'})[cat]||cat; }
+  function fmtDay(key){ const [y,m,d]=key.split('-').map(Number); const dt=new Date(y,m-1,d); return dt.toLocaleDateString(undefined,{weekday:'short',year:'numeric',month:'short',day:'numeric'}); }
+
+  // Details modal
+  function openDetails(a){ els.d_title.textContent=a.title||'—'; els.d_meta.textContent = `${new Date(a.time).toLocaleString()} • ${label(a.category)} • ${a.source||'—'}`; els.d_notes.textContent=a.notes||'';
+    els.d_sections.innerHTML=''; const sections=Array.isArray(a.sections)?a.sections:[];
+    if(!sections.length){ const none=document.createElement('div'); none.className='help'; none.textContent='No sections provided.'; els.d_sections.appendChild(none); }
+    else {
+      sections.forEach((s, idx)=>{ const wrap=document.createElement('div'); wrap.className='card'; wrap.style.margin='8px 0';
+        const h=document.createElement('div'); h.style.fontWeight='600'; h.textContent=s.heading||`Section ${idx+1}`; wrap.appendChild(h);
+        if(s.text){ const p=document.createElement('div'); p.style.whiteSpace='pre-wrap'; p.textContent=s.text; wrap.appendChild(p); }
+        if(Array.isArray(s.items)){
+          s.items.forEach(it=>{ const card=document.createElement('div'); card.className='item-card';
+            const ti=document.createElement('div'); ti.className='item-title'; ti.textContent=it.title||'Item'; card.appendChild(ti);
+            const meta=document.createElement('div'); meta.className='help'; meta.textContent=[it.date||'', it.source||''].filter(Boolean).join(' • '); if(meta.textContent) card.appendChild(meta);
+            if(it.summary){ const sm=document.createElement('div'); sm.textContent=it.summary; card.appendChild(sm); }
+            const href=normalizeAbsolute(it.link); if(href){ const aTag=document.createElement('a'); aTag.href=href; aTag.textContent='Source'; aTag.rel='noopener noreferrer'; aTag.className='btn'; aTag.style.marginTop='6px'; card.appendChild(aTag); }
+            if(Array.isArray(it.tags)&&it.tags.length){ const tagwrap=document.createElement('div'); tagwrap.className='badges'; it.tags.forEach(t=>{ const b=document.createElement('span'); b.className='badge'; b.textContent=t; tagwrap.appendChild(b); }); card.appendChild(tagwrap); }
+            if(it.material===true){ const m=document.createElement('span'); m.className='badge warn'; m.textContent='material'; card.appendChild(m); }
+            wrap.appendChild(card); });
+        }
+        els.d_sections.appendChild(wrap); });
+    }
+    els.dlgDetails.showModal();
+  }
+
+  // Merge/normalize/storage
+  function normalize(list){ return list.map(a=>({ id:a.id||key(a), title:a.title||'Untitled', link:a.link||'', category:['8am','12pm','3pm','5pm','other'].includes(a.category)?a.category:'other', source:a.source||'Imported', time:a.time||new Date().toISOString(), status:['new','read','snoozed','done'].includes(a.status)?a.status:'new', priority:['high','med','low'].includes(a.priority)?a.priority:'med', notes:a.notes||'', tags:Array.isArray(a.tags)?a.tags:[], sections:Array.isArray(a.sections)?a.sections:[] })); }
+  function key(a){ return [a.title,a.time,a.category].join('|'); }
+  function merge(incoming, existing){ const map=new Map(existing.map(x=>[x.id,x])); for(const a of incoming){ if(!map.has(a.id)) map.set(a.id,a); } return Array.from(map.values()); }
+  function load(){ try{ const raw=localStorage.getItem(STORAGE_KEY); if(raw) return JSON.parse(raw);}catch{} return {alerts:starter()}; }
+  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+  // Starter sample
+  function starter(){ const d=new Date().toISOString().slice(0,10); return [
+    { id:uid(), title:'8 AM Watchlist — sample', time:`${d}T08:00:00+05:30`, category:'8am', status:'new', priority:'med', source:'Watchlist', tags:['earnings'], notes:'Starter entry', sections:[{heading:'InterGlobe Aviation (IndiGo)', items:[{title:'Q1 FY26 Results', source:'IR', summary:'PAT ₹2,176 cr; revenue +5% YoY', link:'https://www.goindigo.in/content/dam/goindigo/investor-relations/Financial%20Results/2025-26/q1_apr_to_jun_2025/Q1FY26-Financial-Results.pdf'}]}] },
+    { id:uid(), title:'AI Noon — sample', time:`${d}T12:00:00+05:30`, category:'12pm', status:'new', priority:'high', source:'AI Noon', tags:['AI'], sections:[{heading:'LLMs on Tabular Data', items:[{title:'TabPFN primer', source:'Taktile Blog', summary:'Transformer-style prior for tabular tasks', link:'https://taktile.com/blog/tabpfn-llm-tabular'}]}] }
+  ]; }
+
+  // CSV export
+  function exportCSV(){ const header=['time','category','title','source','priority','status','tags','link','notes']; const rows=state.alerts.map(a=>[a.time,a.category,esc(a.title),esc(a.source||''),a.priority||'',a.status||'',esc((a.tags||[]).join(';')),a.link||'',esc(a.notes||'')].join(',')); const csv=[header.join(','),...rows].join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='alerts_timeline_'+new Date().toISOString().slice(0,10)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+  function esc(s){ return '"'+String(s).replace(/"/g,'""')+'"'; }
+
+  // Sync
+  async function fetchSync(){ const url=(els.syncUrl.value||'').trim(); if(!url) return; try{ els.syncMsg.textContent='Syncing…'; const res=await fetch(url,{headers:{'cache-control':'no-cache'}}); if(!res.ok) throw new Error('HTTP '+res.status); const data=await res.json(); const list=Array.isArray(data)?data:data.alerts; if(!Array.isArray(list)) throw new Error('JSON must be an array or {alerts:[...]}'); const normalized=normalize(list); state.alerts=merge(normalized,state.alerts); localStorage.setItem(LAST_KEY, new Date().toISOString()); updateLast(); localStorage.setItem(SYNC_URL_KEY,url); save(); render(); els.syncMsg.textContent='Synced '+normalized.length+' item(s)'; }catch(e){ els.syncMsg.textContent='Sync failed: '+(e?.message||e); }}
+  function updateLast(){ const v=localStorage.getItem(LAST_KEY); els.syncMsg.textContent='Last sync: '+(v?new Date(v).toLocaleString():'never'); }
+  let timer=null; function resetTimer(){ if(timer) clearInterval(timer); if(!els.autoSync.checked||!els.syncUrl.value.trim()) return; const ms=Math.max(1,Number(els.syncInterval.value)||15)*60*1000; timer=setInterval(fetchSync,ms); }
+
+  // Link safety
+  function normalizeAbsolute(u){ if(!u) return ''; u=String(u).trim(); if(/^https?:\/\//i.test(u)) return u; if(/^www\./i.test(u)) return 'https://'+u; if(/^\/\//.test(u)) return 'https:'+u; return ''; }
+
+  function uid(){ return (crypto.randomUUID?crypto.randomUUID():('id-'+Math.random().toString(36).slice(2))); }
+
+  // Init paint
+  render(); fetchSync(); resetTimer();
+})();
+</script>
+</body>
+</html>
